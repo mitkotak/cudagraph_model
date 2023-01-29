@@ -1,276 +1,124 @@
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
-# from arraycontext import PyCUDAArrayContext
-from grudge.array_context import PyOpenCLArrayContext
+from mpl_toolkits.mplot3d import Axes3D
+from arraycontext import (PyCUDAArrayContext, PytatoCUDAGraphArrayContext, PytatoJAXArrayContext)
+from meshmode.array_context import FusionContractorArrayContext
+from pytools.obj_array import make_obj_array
+import os
 import pytato as pt
 import multiprocessing
 from dataclasses import dataclass
-from arraycontext import PytatoCUDAGraphArrayContext
 from arraycontext import (
     freeze, thaw,
     ArrayContainer, ArrayContext,
     with_container_arithmetic, dataclass_array_container)
 
-def vector_add(a, b, c, d):
-    e = a + b
-    f = b + c
-    g = c + d
-    h = d + a
-    i = e + f
-    j = g + h
-    k = i + j
-    return k
 
 def mem_checker():
     free_bytes, total_bytes = drv.mem_get_info()
     print(free_bytes/total_bytes)
 
-    
-def run_cudagraph_kernel(actx_class=PyOpenCLArrayContext):
-    # if issubclass(actx_class, PyCUDAArrayContext):
-    if issubclass(actx_class, PytatoCUDAGraphArrayContext):
-        import pycuda.driver as drv
-        drv.init()
-        global context
-        from pycuda.tools import make_default_context,DeviceMemoryPool  # noqa: E402
-        context = make_default_context()
-        device = context.get_device()
+def time_kernel(f_compiled):
+    from time import time
+    for _ in range(2):
+        f_compiled()
+
+    n_sim_round = 0
+    total_sim_time = 0.
+
+    while ((total_sim_time < 5.0)
+            or (n_sim_round < 100)):
+
+        t_start = time()
+
+        for _ in range(100):
+            f_compiled()
+        
+        context.synchronize()
+
+        t_end = time()
+
+        n_sim_round += 100
+        total_sim_time += (t_end - t_start)
+
+    return total_sim_time / n_sim_round
+
+def run_cudagraph_kernel(actx_class=FusionContractorArrayContext):
+    import pycuda.driver as drv
+    drv.init()
+    global context
+    from pycuda.tools import make_default_context,DeviceMemoryPool  # noqa: E402
+    context = make_default_context()
+    device = context.get_device()
+    if issubclass(actx_class, (PytatoCUDAGraphArrayContext, PyCUDAArrayContext)):
         actx = actx_class(allocator=DeviceMemoryPool().allocate)
-    else:    
+    elif issubclass(actx_class, PytatoJAXArrayContext):
+        actx = actx_class()
+    else:  
         import pyopencl as cl
         import pyopencl.tools as cl_tools
-        import os
         os.environ["PYOPENCL_CTX"] = "0:1"
         cl_ctx = cl.create_some_context()
         queue = cl.CommandQueue(cl_ctx)
         actx = actx_class(
             queue,
             allocator=cl_tools.MemoryPool(cl_tools.ImmediateAllocator(queue)),
-        )    
+        )
+    cudagraph_actx = PytatoCUDAGraphArrayContext(allocator=DeviceMemoryPool().allocate)
 
-    @with_container_arithmetic(bcast_obj_array=True, rel_comparison=True)
-    @dataclass_array_container
-    @dataclass(frozen=True)
-    class Width5:
-        x1: ArrayContainer
-        x2: ArrayContainer
-        x3: ArrayContainer
-        x4: ArrayContainer
-        x5: ArrayContainer
-        array_context: ArrayContext
+    fig, ax = plt.subplots(2)
+    sim_time = 5.0
+    widths = np.arange(50)
+    heights = np.arange(50)
+    W,H = np.meshgrid(widths, heights)
+    speedup = np.zeros(W.shape)
+    for size in [1000]:
+        for h_idx, height in enumerate(heights):
+            for w_idx, width in enumerate(widths):
+                def run_kernel(actx):
+                    def f(xs, ys):
+                        assert isinstance(xs, np.ndarray)
+                        assert isinstance(ys, np.ndarray)
+                        for _ in range(height):
+                            xs = make_obj_array([xs[i] + ys[i] for i in range(len(xs))])
+                        return xs
 
-    @with_container_arithmetic(bcast_obj_array=True, rel_comparison=True)
-    @dataclass_array_container
-    @dataclass(frozen=True)
-    class Width6:
-        x1: ArrayContainer
-        x2: ArrayContainer
-        x3: ArrayContainer
-        x4: ArrayContainer
-        x5: ArrayContainer
-        x6: ArrayContainer
-        array_context: ArrayContext
-        
-    @with_container_arithmetic(bcast_obj_array=True, rel_comparison=True)
-    @dataclass_array_container
-    @dataclass(frozen=True)
-    class Width7:
-        x1: ArrayContainer
-        x2: ArrayContainer
-        x3: ArrayContainer
-        x4: ArrayContainer
-        x5: ArrayContainer
-        x6: ArrayContainer
-        x7: ArrayContainer
-        array_context: ArrayContext
+                    x = make_obj_array([actx.zeros(size,  np.float64)+1
+                                        for _ in range(width)])
+                    y = make_obj_array([actx.zeros(size,  np.float64)+1
+                                        for _ in range(width)])
+                    f_compiled = actx.compile(lambda : f(actx.thaw(actx.freeze(x)), actx.thaw(actx.freeze(y)))) 
+                    
+                    return time_kernel(f_compiled)
 
-    def width_5(data_container):
-        from arraycontext import rec_map_array_container
-        actx = data_container.array_context
-        doubled_data_container = rec_map_array_container(lambda x: 2 * x,
-                                            data_container)
-        return Width5(doubled_data_container.x1,
-                             doubled_data_container.x2,
-                             doubled_data_container.x3,
-                             doubled_data_container.x4,
-                             doubled_data_container.x5,
-                             actx)
+                final_den_time = run_kernel(actx)
+                final_num_time = run_kernel(cudagraph_actx)
+
+                print("Speedup for ",size,"sized array, height ", height, " , width ", width, " :", (final_num_time/final_den_time))
+                speedup[h_idx,w_idx] = final_num_time/final_den_time
     
-    def width_6(data_container):
-        from arraycontext import rec_map_array_container
-        actx = data_container.array_context
-        doubled_data_container = rec_map_array_container(lambda x: 2 * x,
-                                            data_container)
-        return Width6(doubled_data_container.x1,
-                             doubled_data_container.x2,
-                             doubled_data_container.x3,
-                             doubled_data_container.x4,
-                             doubled_data_container.x5,
-                             doubled_data_container.x6,
-                             actx)
-    
-
-    def width_7(data_container):
-        from arraycontext import rec_map_array_container
-        actx = data_container.array_context
-        doubled_data_container = rec_map_array_container(lambda x: 2 * x,
-                                            data_container)
-        return Width7(doubled_data_container.x1,
-                             doubled_data_container.x2,
-                             doubled_data_container.x3,
-                             doubled_data_container.x4,
-                             doubled_data_container.x5,
-                             doubled_data_container.x6,
-                             doubled_data_container.x7,
-                             actx)
-
-    fig = plt.figure()
-    timings_5, timings_6, timings_7 = [],[],[]
-    for size in [1000,2000,3000,4000,5000]:
-        width_5_compiled = actx.compile(width_5)
-        width_6_compiled = actx.compile(width_6)
-        width_7_compiled = actx.compile(width_7)
-
-        input_5 = actx.from_numpy(Width5(np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                actx))
-        input_6 = actx.from_numpy(Width6(np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                actx))
-        input_7 = actx.from_numpy(Width7(np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                        np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                        np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                        np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                        np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                        np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                        np.zeros(shape=(size,1), dtype=np.float64) + 1,
-                                        actx))
-
-        from time import time
-        c_time_start = time()
-        for i in range(2):
-            # if isinstance(actx, PytatoCUDAGraphArrayContext):
-            #   a = thaw(freeze(a, actx), actx)
-            # a = f_compiled(a, b, c, d)
-            input_5 = width_5_compiled(input_5)
-
-        c_time_end = time()
-        print("Compiletime in secs", (c_time_end - c_time_start))
-        # proc = multiprocessing.Process(target=mem_checker)
-        # proc.start()
-        # for i in range(2):
-        #     result = f_compiled(a, b, c, d)
-        #actx.freeze(result)
-        #mem_checker()
-        #proc.join()
-
-        t_start = time()
-        for i in range(10):
-            #if isinstance(actx, PytatoCUDAGraphArrayContext):
-            #    a = thaw(freeze(a, actx), actx)
-            # a = f_compiled(a, b, c, d)
-            input_5 = width_5_compiled(input_5)
-
-
-        # a = thaw(freeze(a, actx), actx)
-        t_end = time()
-        print("Runtime in secs for ",size,"sized array: ", (t_end - t_start)/10)
-        timings_5.append((t_end - t_start)/10)
-        
-        c_time_start = time()
-        for i in range(2):
-            # if isinstance(actx, PytatoCUDAGraphArrayContext):
-            #   a = thaw(freeze(a, actx), actx)
-            # a = f_compiled(a, b, c, d)
-            input_6 = width_6_compiled(input_6)
-
-        c_time_end = time()
-        print("Compiletime in secs", (c_time_end - c_time_start))
-        # proc = multiprocessing.Process(target=mem_checker)
-        # proc.start()
-        # for i in range(2):
-        #     result = f_compiled(a, b, c, d)
-        #actx.freeze(result)
-        #mem_checker()
-        #proc.join()
-
-        t_start = time()
-        for i in range(10):
-            #if isinstance(actx, PytatoCUDAGraphArrayContext):
-            #    a = thaw(freeze(a, actx), actx)
-            # a = f_compiled(a, b, c, d)
-            input_6 = width_6_compiled(input_6)
-
-
-        # a = thaw(freeze(a, actx), actx)
-        t_end = time()
-        print("Runtime in secs for ",size,"sized array: ", (t_end - t_start)/10)
-        timings_6.append((t_end - t_start)/10)
-
-        c_time_start = time()
-        for i in range(2):
-            # if isinstance(actx, PytatoCUDAGraphArrayContext):
-            #   a = thaw(freeze(a, actx), actx)
-            # a = f_compiled(a, b, c, d)
-            input_7 = width_7_compiled(input_7)
-
-        c_time_end = time()
-        print("Compiletime in secs", (c_time_end - c_time_start))
-        # proc = multiprocessing.Process(target=mem_checker)
-        # proc.start()
-        # for i in range(2):
-        #     result = f_compiled(a, b, c, d)
-        #actx.freeze(result)
-        #mem_checker()
-        #proc.join()
-
-        t_start = time()
-        for i in range(10):
-            #if isinstance(actx, PytatoCUDAGraphArrayContext):
-            #    a = thaw(freeze(a, actx), actx)
-            # a = f_compiled(a, b, c, d)
-            input_7 = width_7_compiled(input_7)
-
-
-        # a = thaw(freeze(a, actx), actx)
-        t_end = time()
-        print("Runtime in secs for ",size,"sized array: ", (t_end - t_start)/10)
-        timings_7.append((t_end - t_start)/10)
-    
-    plt.plot([1000,2000,3000,4000,5000], timings_5, label="width=5")    
-    plt.plot([1000,2000,3000,4000,5000], timings_6, label="width=6")
-    plt.plot([1000,2000,3000,4000,5000], timings_7, label="width=7")
-
     from datetime import datetime
     import pytz
+    os.mkdir(datetime
+            .now(pytz.timezone("America/Chicago"))
+            .strftime("archive/%Y_%m_%d_%H%M"))
     filename = (datetime
                 .now(pytz.timezone("America/Chicago"))
-                .strftime("archive/case_%Y_%m_%d_%H%M.png"))
-    plt.legend()
-    plt.title(actx_class.__name__[:-len("ArrayContext")])
-    plt.xlabel("Array Size")
-    plt.ylabel("Runtime in secs")
-    plt.savefig(filename)
+                .strftime("archive/%Y_%m_%d_%H%M/speedup_%Y_%m_%d_%H%M.npz"))
+    np.savez(filename, W=W, H=H, speedup=speedup)
 
-    if issubclass(actx_class, PytatoCUDAGraphArrayContext):
-    # if issubclass(actx_class, PyCUDAArrayContext):
-        context.pop()
-        context = None
+    context.pop()
+    context = None
 
-        from pycuda.tools import clear_context_caches
+    from pycuda.tools import clear_context_caches
 
-        clear_context_caches()
-        import gc
-        gc.collect()
+    clear_context_caches()
+    import gc
+    gc.collect()
 
 if __name__ == "__main__":
-    
-    run_cudagraph_kernel(actx_class=PytatoCUDAGraphArrayContext)
+
+    run_cudagraph_kernel(actx_class=PyCUDAArrayContext)
+    # run_cudagraph_kernel(actx_class=PytatoJAXArrayContext)
     # run_cudagraph_kernel()
