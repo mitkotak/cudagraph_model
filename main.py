@@ -72,8 +72,8 @@ def run_cudagraph_kernel(actx_class=FusionContractorArrayContext):
     fig, ax = plt.subplots(2)
     sim_time = 5.0
     sizes = [10000,20000,30000]
-    widths = np.arange(1,50,5)
-    heights = np.arange(1,100,5)
+    widths = np.arange(1,150,5)
+    heights = np.arange(1,150,5)
     speedup = np.zeros(shape=(len(sizes), len(widths), len(heights)))
     for s_idx, size in enumerate(sizes):
         for h_idx, height in enumerate(heights):
@@ -99,16 +99,16 @@ def run_cudagraph_kernel(actx_class=FusionContractorArrayContext):
                 print("Speedup for ",size,"sized array, height ", height, " , width ", width, " :", (final_base_time/final_cudagraph_time))
                 speedup[s_idx,w_idx,h_idx] = final_base_time/final_cudagraph_time
 
-        from datetime import datetime
-        import pytz
-        os.mkdir(datetime
+    from datetime import datetime
+    import pytz
+    os.mkdir(datetime
+            .now(pytz.timezone("America/Chicago"))
+            .strftime("archive/%Y_%m_%d_%H%M"))
+    filename = (datetime
                 .now(pytz.timezone("America/Chicago"))
-                .strftime("archive/%Y_%m_%d_%H%M"))
-        filename = (datetime
-                    .now(pytz.timezone("America/Chicago"))
-                    .strftime("archive/%Y_%m_%d_%H%M/speedup_%Y_%m_%d_%H%M.npz"))
-        np.savez(filename, widths=widths, heights=heights, sizes=sizes, speedup=speedup)
-        print("Saved ",filename)
+                .strftime("archive/%Y_%m_%d_%H%M/speedup_%Y_%m_%d_%H%M.npz"))
+    np.savez(filename, widths=widths, heights=heights, sizes=sizes, speedup=speedup)
+    print("Saved ",filename)
 
     context.pop()
     context = None
