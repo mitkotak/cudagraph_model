@@ -21,7 +21,7 @@ def mem_checker():
 
 def time_kernel(f_compiled):
     from time import time
-    for _ in range(2):
+    for _ in range(10):
         f_compiled()
 
     n_sim_round = 0
@@ -29,6 +29,8 @@ def time_kernel(f_compiled):
 
     while ((total_sim_time < 5.0)
             or (n_sim_round < 100)):
+
+        context.synchronize()
 
         t_start = time()
 
@@ -46,12 +48,12 @@ def time_kernel(f_compiled):
 
 def run_cudagraph_kernel(actx_class=FusionContractorArrayContext):
     import pycuda.driver as drv
+    from pycuda.tools import make_default_context,DeviceMemoryPool  # noqa: E402
     drv.init()
     global context
-    from pycuda.tools import make_default_context,DeviceMemoryPool  # noqa: E402
     context = make_default_context()
     device = context.get_device()
-    if issubclass(actx_class, (PytatoCUDAGraphArrayContext, PyCUDAArrayContext)):
+    if issubclass(actx_class, (PyCUDAArrayContext)):
         actx = actx_class(allocator=DeviceMemoryPool().allocate)
     elif issubclass(actx_class, PytatoJAXArrayContext):
         actx = actx_class()
@@ -66,14 +68,14 @@ def run_cudagraph_kernel(actx_class=FusionContractorArrayContext):
             allocator=cl_tools.MemoryPool(cl_tools.ImmediateAllocator(queue)),
         )
     cudagraph_actx = PytatoCUDAGraphArrayContext(allocator=DeviceMemoryPool().allocate)
-
+    
     fig, ax = plt.subplots(2)
     sim_time = 5.0
-    widths = np.arange(50)
-    heights = np.arange(50)
-    W,H = np.meshgrid(widths, heights)
-    speedup = np.zeros(W.shape)
-    for size in [1000]:
+    sizes = [10000,20000,30000]
+    widths = np.arange(1,50,5)
+    heights = np.arange(1,100,5)
+    speedup = np.zeros(shape=(len(sizes), len(widths), len(heights)))
+    for s_idx, size in enumerate(sizes):
         for h_idx, height in enumerate(heights):
             for w_idx, width in enumerate(widths):
                 def run_kernel(actx):
@@ -84,29 +86,29 @@ def run_cudagraph_kernel(actx_class=FusionContractorArrayContext):
                             xs = make_obj_array([xs[i] + ys[i] for i in range(len(xs))])
                         return xs
 
-                    x = make_obj_array([actx.zeros(size,  np.float64)+1
+                    xs = make_obj_array([actx.zeros(size,  np.float64)+1
                                         for _ in range(width)])
-                    y = make_obj_array([actx.zeros(size,  np.float64)+1
+                    ys = make_obj_array([actx.zeros(size,  np.float64)+1
                                         for _ in range(width)])
-                    f_compiled = actx.compile(lambda : f(actx.thaw(actx.freeze(x)), actx.thaw(actx.freeze(y)))) 
-                    
+                    f_compiled = actx.compile(lambda : f(actx.thaw(actx.freeze(xs)), actx.thaw(actx.freeze(ys))))
                     return time_kernel(f_compiled)
 
-                final_den_time = run_kernel(actx)
-                final_num_time = run_kernel(cudagraph_actx)
+                final_cudagraph_time = run_kernel(cudagraph_actx)
+                final_base_time = run_kernel(actx)
+                
+                print("Speedup for ",size,"sized array, height ", height, " , width ", width, " :", (final_base_time/final_cudagraph_time))
+                speedup[s_idx,w_idx,h_idx] = final_base_time/final_cudagraph_time
 
-                print("Speedup for ",size,"sized array, height ", height, " , width ", width, " :", (final_num_time/final_den_time))
-                speedup[h_idx,w_idx] = final_num_time/final_den_time
-    
-    from datetime import datetime
-    import pytz
-    os.mkdir(datetime
-            .now(pytz.timezone("America/Chicago"))
-            .strftime("archive/%Y_%m_%d_%H%M"))
-    filename = (datetime
+        from datetime import datetime
+        import pytz
+        os.mkdir(datetime
                 .now(pytz.timezone("America/Chicago"))
-                .strftime("archive/%Y_%m_%d_%H%M/speedup_%Y_%m_%d_%H%M.npz"))
-    np.savez(filename, W=W, H=H, speedup=speedup)
+                .strftime("archive/%Y_%m_%d_%H%M"))
+        filename = (datetime
+                    .now(pytz.timezone("America/Chicago"))
+                    .strftime("archive/%Y_%m_%d_%H%M/speedup_%Y_%m_%d_%H%M.npz"))
+        np.savez(filename, widths=widths, heights=heights, sizes=sizes, speedup=speedup)
+        print("Saved ",filename)
 
     context.pop()
     context = None
