@@ -2,7 +2,8 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from arraycontext import (PyCUDAArrayContext, PytatoCUDAGraphArrayContext, PytatoJAXArrayContext)
+from arraycontext import (PyCUDAArrayContext, PytatoCUDAGraphArrayContext, PytatoJAXArrayContext,
+                        rec_map_array_container)
 from meshmode.array_context import FusionContractorArrayContext
 from pytools.obj_array import make_obj_array
 import os
@@ -69,35 +70,61 @@ def run_cudagraph_kernel(actx_class=FusionContractorArrayContext):
         )
     cudagraph_actx = PytatoCUDAGraphArrayContext(allocator=DeviceMemoryPool().allocate)
     
-    fig, ax = plt.subplots(2)
     sim_time = 5.0
-    sizes = [10000,20000,30000]
-    widths = np.arange(1,150,5)
-    heights = np.arange(1,150,5)
-    speedup = np.zeros(shape=(len(sizes), len(widths), len(heights)))
+    #sizes = [1000,10000]
+    sizes = [30000]
+    widths = [3**1, 3**2, 3**3]
+    # widths = np.arange(1,3)
+    # heights = np.arange(1,3)
+    heights = [1]
+    #speedup = np.zeros(shape=(len(sizes), len(widths), len(heights), 2))
+    speedup = np.zeros(shape=(len(sizes),2))
     for s_idx, size in enumerate(sizes):
-        for h_idx, height in enumerate(heights):
-            for w_idx, width in enumerate(widths):
-                def run_kernel(actx):
-                    def f(xs, ys):
-                        assert isinstance(xs, np.ndarray)
-                        assert isinstance(ys, np.ndarray)
-                        for _ in range(height):
-                            xs = make_obj_array([xs[i] + ys[i] for i in range(len(xs))])
-                        return xs
-
-                    xs = make_obj_array([actx.zeros(size,  np.float64)+1
-                                        for _ in range(width)])
-                    ys = make_obj_array([actx.zeros(size,  np.float64)+1
-                                        for _ in range(width)])
-                    f_compiled = actx.compile(lambda : f(actx.thaw(actx.freeze(xs)), actx.thaw(actx.freeze(ys))))
-                    return time_kernel(f_compiled)
-
-                final_cudagraph_time = run_kernel(cudagraph_actx)
-                final_base_time = run_kernel(actx)
-                
-                print("Speedup for ",size,"sized array, height ", height, " , width ", width, " :", (final_base_time/final_cudagraph_time))
-                speedup[s_idx,w_idx,h_idx] = final_base_time/final_cudagraph_time
+        # for i in range(len(heights)):
+            # height = heights[i]
+            # width  = widths[i]
+        height = 3
+        width = 9
+        # for h_idx, height in enumerate(heights):
+        #     for w_idx, width in enumerate(widths):
+        def run_kernel(actx):
+            def f(xs):
+                #xs[::3] = actx.np.where(xs[::3], xs[1::3], xs[2::3])
+                xs[::3] = actx.np.where(xs[::3], xs[1::3], xs[2::3])
+                xs[::3] = actx.np.where(xs[::3], xs[1::3], xs[2::3])
+                #xs = actx.np.where(xs[::3], xs[1::3], xs[2::3])
+                xs = actx.np.where(xs[::3], xs[1::3], xs[2::3])
+                xs = actx.np.where(xs[::3], xs[1::3], xs[2::3])
+                return xs
+            xs = actx.thaw(actx.freeze(make_obj_array([actx.zeros(size, np.float64) for i in range(width)])))
+            f_compiled = actx.compile(lambda: f(xs))
+            return time_kernel(f_compiled)
+        
+            # def run_kernel(actx):
+            #     def f(xs):
+            #         for _ in range(height):
+            #             #xs = actx.np.where(xs[::3], xs[1::3], xs[2::3])
+            #             xs[::3] = actx.np.where(xs[::3], xs[1::3], xs[2::3])
+            #         return xs
+            #     xs = actx.thaw(actx.freeze(make_obj_array([actx.zeros(size, np.float64) for i in range(width)])))
+            #     f_compiled = actx.compile(lambda: f(xs))
+            #     return time_kernel(f_compiled)
+            
+            # def run_kernel(actx):
+            #     def f(xs):
+            #         for _ in range(height):
+            #             xs = xs + 1
+            #         return xs
+            #     xs = actx.thaw(actx.freeze(make_obj_array([actx.zeros(size,  np.float64)+1 for _ in range(width)])))
+            #     f_compiled = actx.compile(lambda: f(xs))
+            #     return time_kernel(f_compiled)
+            
+        final_cudagraph_time = run_kernel(cudagraph_actx)
+        final_base_time = run_kernel(actx)
+        
+        print("Speedup for ",size,"sized array, cudagraph_time ", final_cudagraph_time, " , base_time ", final_base_time, " :", (final_base_time/final_cudagraph_time))
+        speedup[s_idx,0] = final_base_time
+        speedup[s_idx,1] = final_cudagraph_time
 
     from datetime import datetime
     import pytz
