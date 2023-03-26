@@ -17,7 +17,7 @@ using namespace std::chrono;
   }\
 }
 
-void create_graph(CUdevice device, CUcontext context, CUgraph graph, size_t SIZE){
+size_t time_cudagraph(CUdevice device, CUcontext context, size_t SIZE){
 
     CHKERR( cuDeviceGet(&device, 0) );
     CHKERR( cuCtxCreate(&context, 0, device) );
@@ -68,6 +68,8 @@ void create_graph(CUdevice device, CUcontext context, CUgraph graph, size_t SIZE
 
     std::cout << "Created array inputs" << std::endl;
 
+    CUgraph graph;
+    CHKERR(cuGraphCreate(&graph, 0));
 
     std::cout << "Executing on _pt_data_0" << std::endl;
 
@@ -1648,6 +1650,133 @@ void create_graph(CUdevice device, CUcontext context, CUgraph graph, size_t SIZE
     nodeDependencies35.push_back(_pt_kernel_13);
     CHKERR(cuGraphAddKernelNode(&_pt_kernel, graph, nodeDependencies35.data(), nodeDependencies35.size(), &kernelParams45)); 
 
+
+    // // Add memfree nodes
+    // CUgraphNode memfree_node1;
+    // std::vector<CUgraphNode> nodeDependencies36;
+    // nodeDependencies36.push_back(_pt_kernel_3);
+    // nodeDependencies36.push_back(_pt_kernel_4);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node1, graph, nodeDependencies36.data(), nodeDependencies36.size(), _pt_array_4));
+
+    // CUgraphNode memfree_node2;
+    // std::vector<CUgraphNode> nodeDependencies37;
+    // nodeDependencies37.push_back(_pt_kernel_2);
+    // nodeDependencies37.push_back(_pt_kernel_3);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node2, graph, nodeDependencies37.data(), nodeDependencies37.size(), _pt_array_3));
+    
+    // CUgraphNode memfree_node3;
+    // std::vector<CUgraphNode> nodeDependencies38;
+    // nodeDependencies38.push_back(_pt_kernel_1);
+    // nodeDependencies38.push_back(_pt_kernel_2);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node3, graph, nodeDependencies38.data(), nodeDependencies38.size(), _pt_array_2));
+    
+    // CUgraphNode memfree_node4;
+    // std::vector<CUgraphNode> nodeDependencies39;
+    // nodeDependencies39.push_back(_pt_kernel_1);
+    // nodeDependencies39.push_back(_pt_kernel_0);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node4, graph, nodeDependencies39.data(), nodeDependencies39.size(), _pt_array_1));
+
+    // CUgraphNode memfree_node5;
+    // std::vector<CUgraphNode> nodeDependencies40;
+    // nodeDependencies40.push_back(_pt_kernel_8);
+    // nodeDependencies40.push_back(_pt_kernel_7);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node5, graph, nodeDependencies40.data(), nodeDependencies40.size(), _pt_array_8));
+
+    // CUgraphNode memfree_node6;
+    // std::vector<CUgraphNode> nodeDependencies41;
+    // nodeDependencies41.push_back(_pt_kernel_6);
+    // nodeDependencies41.push_back(_pt_kernel_7);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node6, graph, nodeDependencies41.data(), nodeDependencies41.size(), _pt_array_7));
+
+    // CUgraphNode memfree_node7;
+    // std::vector<CUgraphNode> nodeDependencies42;
+    // nodeDependencies42.push_back(_pt_kernel_6);
+    // nodeDependencies42.push_back(_pt_kernel_5);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node7, graph, nodeDependencies42.data(), nodeDependencies42.size(), _pt_array_6));
+
+    // CUgraphNode memfree_node8;
+    // std::vector<CUgraphNode> nodeDependencies43;
+    // nodeDependencies43.push_back(_pt_kernel_0);
+    // nodeDependencies43.push_back(_pt_kernel_5);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node8, graph, nodeDependencies43.data(), nodeDependencies43.size(), _pt_array_5));
+
+    // CUgraphNode memfree_node9;
+    // std::vector<CUgraphNode> nodeDependencies44;
+    // nodeDependencies44.push_back(_pt_kernel_11);
+    // nodeDependencies44.push_back(_pt_kernel_12);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node9, graph, nodeDependencies44.data(), nodeDependencies44.size(), _pt_array_12));
+
+    // CUgraphNode memfree_node10;
+    // std::vector<CUgraphNode> nodeDependencies45;
+    // nodeDependencies45.push_back(_pt_kernel_11);
+    // nodeDependencies45.push_back(_pt_kernel_10);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node10, graph, nodeDependencies45.data(), nodeDependencies45.size(), _pt_array_11));
+
+    // CUgraphNode memfree_node11;
+    // std::vector<CUgraphNode> nodeDependencies46;
+    // nodeDependencies46.push_back(_pt_kernel_9);
+    // nodeDependencies46.push_back(_pt_kernel_10);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node11, graph, nodeDependencies46.data(), nodeDependencies46.size(), _pt_array_10));
+
+    // CUgraphNode memfree_node12;
+    // std::vector<CUgraphNode> nodeDependencies47;
+    // nodeDependencies47.push_back(_pt_kernel_0);
+    // nodeDependencies47.push_back(_pt_kernel_9);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node12, graph, nodeDependencies47.data(), nodeDependencies47.size(), _pt_array_9));
+
+    // CUgraphNode memfree_node13;
+    // std::vector<CUgraphNode> nodeDependencies48;
+    // nodeDependencies48.push_back(_pt_kernel_0);
+    // nodeDependencies48.push_back(_pt_kernel);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node13, graph, nodeDependencies48.data(), nodeDependencies48.size(), _pt_array_0));
+
+    // CUgraphNode memfree_node14;
+    // std::vector<CUgraphNode> nodeDependencies49;
+    // nodeDependencies49.push_back(_pt_kernel_17);
+    // nodeDependencies49.push_back(_pt_kernel_16);
+    // CHKERR(cuGraphAddMemFreeNode(&memfree_node14, graph, nodeDependencies49.data(), nodeDependencies49.size(), _pt_array_17));
+
+    CUgraphExec exec;
+    std::cout << "Instantiating ExecGraph" << std::endl;
+    CHKERR(cuGraphInstantiate(&exec, graph, NULL, NULL, 0));
+
+    std::cout << "warmup rounds" << std::endl;
+    for (int i=0; i < 10; i++){
+        CHKERR(cuGraphLaunch(exec, 0));
+    }
+
+    size_t n_sim_round = 0;
+    size_t total_sim_time = 5.0;
+    
+    while ((total_sim_time < 5.0) || (n_sim_round < 100)){
+        
+        CHKERR(cuCtxSynchronize());
+        // Get the current time
+        auto start = high_resolution_clock::now();
+        
+        for (int i=0; i < 100; i++){
+            CHKERR(cuGraphLaunch(exec, 0));
+        }
+
+        CHKERR(cuCtxSynchronize());
+
+        // Get the current time again
+        auto end = high_resolution_clock::now();
+
+        n_sim_round += 100;
+
+        auto duration = duration_cast<seconds>(end - start);
+
+        total_sim_time += duration.count();
+    }
+
+    std::cout << "Destroying Graph" << std::endl;
+    CHKERR(cuGraphDestroy(graph));
+
+    std::cout << "Destroying ExecGraph" << std::endl;
+    CHKERR(cuGraphExecDestroy(exec)); 
+
+    return (total_sim_time/n_sim_round);
 }
 
 int main(){
@@ -1657,52 +1786,11 @@ int main(){
     CUcontext context = 0;
 
     CHKERR( cuInit(0) );
-  
-    CUgraph graph;
-    CHKERR(cuGraphCreate(&graph, 0));
 
-    std::cout << "Creating graph" << std::endl;
-    create_graph(device, context, graph, 100000);
+    std::cout << "Running graph" << std::endl;
+    size_t sim_time = time_cudagraph(device, context, 100000);
 
-    CUgraphExec exec;
-    std::cout << "Instantiating ExecGraph" << std::endl;
-    CHKERR(cuGraphInstantiate(&exec, graph, NULL, NULL, 0));
+    std::cout << sim_time << std::endl;
 
-    CHKERR(cuGraphLaunch(exec, 0));
-    
-    // std::cout << "warmup rounds" << std::endl;
-    // for (int i=0; i < 10; i++){
-        
-    // }
 
-    // size_t n_sim_round = 0;
-    // size_t total_sim_time = 5.0;
-    
-    // while ((total_sim_time < 5.0) || (n_sim_round < 100)){
-        
-    //     CHKERR(cuCtxSynchronize());
-    //     // Get the current time
-    //     auto start = high_resolution_clock::now();
-        
-    //     for (int i=0; i < 100; i++){
-    //         CHKERR(cuGraphLaunch(exec, 0));
-    //     }
-
-    //     CHKERR(cuCtxSynchronize());
-
-    //     // Get the current time again
-    //     auto end = high_resolution_clock::now();
-
-    //     n_sim_round += 100;
-
-    //     auto duration = duration_cast<seconds>(end - start);
-
-    //     total_sim_time += duration.count();
-    // }
-
-    std::cout << "Destroying Graph" << std::endl;
-    CHKERR(cuGraphDestroy(graph));
-
-    std::cout << "Destroying ExecGraph" << std::endl;
-    CHKERR(cuGraphExecDestroy(exec)); 
 }
