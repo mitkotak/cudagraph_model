@@ -27,17 +27,17 @@ size_t time_cudagraph(CUdevice device, CUcontext context, size_t SIZE){
 
     CUmodule _pt_mod_5;
 
-    CHKERR(cuModuleLoad(&_pt_mod_5, "/home/mitak2/cudagraph_model/kernels/ab86a6c0dac41d5be438e8b614d7c02e.cubin"));
+    CHKERR(cuModuleLoad(&_pt_mod_5, "/home/mitak2/cudagraph_model/kernels/knl_add.cubin"));
 
-    CUfunction func2;
-    CHKERR(cuModuleGetFunction(&func2, _pt_mod_5, "knl_where"));
+    CUfunction func;
+    CHKERR(cuModuleGetFunction(&func, _pt_mod_5, "knl_add"));
 
     CUmodule _pt_mod_14;
 
-    CHKERR(cuModuleLoad(&_pt_mod_14, "/home/mitak2/cudagraph_model/kernels/2f754a27b20385f74007c71359b567bc.cubin"));
+    CHKERR(cuModuleLoad(&_pt_mod_14, "/home/mitak2/cudagraph_model/kernels/knl_where.cubin"));
       
-    CUfunction func;
-    CHKERR(cuModuleGetFunction(&func, _pt_mod_14, "knl_add_x1_1000000_x2_1"));
+    CUfunction func2;
+    CHKERR(cuModuleGetFunction(&func2, _pt_mod_14, "knl_where"));
 
     unsigned BLOCK_SIZE[3];
     BLOCK_SIZE[0] = 128;
@@ -53,7 +53,7 @@ size_t time_cudagraph(CUdevice device, CUcontext context, size_t SIZE){
 
     for (int i = 0; i < 9; i++){
         _pt_input[i] = new int[SIZE];
-        memset(_pt_input[i], 0, sizeof(float) * SIZE);
+        memset(_pt_input[i], 1, sizeof(float) * SIZE);
     }
 
     std::cout << "Created array inputs" << std::endl;
@@ -154,7 +154,17 @@ size_t time_cudagraph(CUdevice device, CUcontext context, size_t SIZE){
         }
       
       }
+
+      for (int j=0; j < 3; j++){
+        CUgraphNode* memfree_node = new CUgraphNode();
+        std::vector<CUgraphNode> nodeDependencies;
+        nodeDependencies.push_back(*_ptr_kernel[j]);
+        nodeDependencies.push_back(*_ptr_kernel[j+1]);
+        CHKERR(cuGraphAddMemFreeNode(memfree_node, graph, nodeDependencies.data(), nodeDependencies.size(), *_ptr_array[j]) );
+      }
     }
+
+    // create first knl_where layer
 
     CUdeviceptr* _ptr_array_layer5[3];
     CUgraphNode* _ptr_kernel_layer5[3];
@@ -208,7 +218,19 @@ size_t time_cudagraph(CUdevice device, CUcontext context, size_t SIZE){
 
     }
 
-    // final layer
+    for (int i=0; i < 3; i++){
+      for (int j=0; j < 3; j++){
+
+        CUgraphNode* memfree_node = new CUgraphNode();
+        std::vector<CUgraphNode> nodeDependencies;
+        nodeDependencies.push_back(*_ptr_kernel_layer5[i]);
+        nodeDependencies.push_back(*_ptr_kernel_layer4[3*i+j]);
+        CHKERR(cuGraphAddMemFreeNode(memfree_node, graph, nodeDependencies.data(), nodeDependencies.size(), *_ptr_array_layer4[3*i + j]) );
+
+      }
+    }
+
+    // create last knl_where layer
   
     CUDA_MEM_ALLOC_NODE_PARAMS* nodeParams = new CUDA_MEM_ALLOC_NODE_PARAMS();
     *nodeParams = {};
@@ -252,22 +274,27 @@ size_t time_cudagraph(CUdevice device, CUcontext context, size_t SIZE){
     nodeDependencies2.push_back(*_ptr_kernel_layer5[2]);
     CHKERR(cuGraphAddKernelNode(_pt_kernel, graph, nodeDependencies2.data(), nodeDependencies2.size(), kernelParams));
 
-    // // Add memfree nodes
-    // CUgraphNode memfree_node1;
-    // std::vector<CUgraphNode> nodeDependencies36;
-    // nodeDependencies36.push_back(_pt_kernel_3);
-    // nodeDependencies36.push_back(_pt_kernel_4);
-    // CHKERR(cuGraphAddMemFreeNode(&memfree_node1, graph, nodeDependencies36.data(), nodeDependencies36.size(), _pt_array_4));
+    for (int i=0; i < 3; i++){
+      CUgraphNode* memfree_node = new CUgraphNode();
+      std::vector<CUgraphNode> nodeDependencies;
+      nodeDependencies.push_back(*_ptr_kernel_layer5[i]);
+      nodeDependencies.push_back(*_pt_kernel);
+      CHKERR(cuGraphAddMemFreeNode(memfree_node, graph, nodeDependencies.data(), nodeDependencies.size(), *_ptr_array_layer5[i]) );
 
+    }
+   
+    CUgraphNode* memfree_node = new CUgraphNode();
+    CHKERR(cuGraphAddMemFreeNode(memfree_node, graph, _pt_kernel, 1, nodeParams->dptr) );
+
+    std::string filePath = "/home/mitak2/cudagraph_model/cpp/cudagraph_c++.dot";
+    CHKERR(cuGraphDebugDotPrint(graph, filePath.c_str(), 1<<1))
     CUgraphExec exec;
-    CUstream stream;
-    CHKERR(cuStreamCreate(&stream, 0));
     std::cout << "Instantiating ExecGraph" << std::endl;
-    CHKERR(cuGraphInstantiateWithFlags(&exec, graph, 1));
+    CHKERR(cuGraphInstantiate(&exec, graph, NULL, NULL, 0));
     
     std::cout << "warmup rounds" << std::endl;
     for (int i=0; i < 10; i++){
-        CHKERR(cuGraphLaunch(exec, stream));
+        CHKERR(cuGraphLaunch(exec, 0));
         //CHKERR( cuCtxSynchronize());
         CUresult error = cuCtxSynchronize();
         if (error != CUDA_SUCCESS) {
@@ -291,7 +318,7 @@ size_t time_cudagraph(CUdevice device, CUcontext context, size_t SIZE){
         std::cout << "entering hot loop" << std::endl;
         
         for (int i=0; i < 100; i++){
-          CHKERR(cuGraphLaunch(exec, stream));
+          CHKERR(cuGraphLaunch(exec, 0));
         }
 
         std::cout << "exiting hot loop" << std::endl;
@@ -318,7 +345,7 @@ int main(){
 
     CHKERR( cuInit(0) );
     std::cout << "Running graph" << std::endl;
-    size_t sim_time = time_cudagraph(device, context, 10000000);
+    size_t sim_time = time_cudagraph(device, context, 1000000);
 
     std::cout << sim_time << std::endl;
 
